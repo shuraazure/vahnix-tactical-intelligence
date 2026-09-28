@@ -362,7 +362,7 @@ def build_3d_globe_html(
     if not mapbox_token:
         try:
             mapbox_token = base64.b64decode(
-                b"cGsuZXlKMWlqb2laR2x6WVhOMFpYSnFZaUlzSW1FaU9pSmpiVEI1Tm1rd2RHZHdhbTlsTW5GeFhXUnBhSFY2Y0h4c0luMC53MHFfeTM2WURxUFc0eXJyNjc1QmF3"
+                b"cGsuZXlKMUlqb2laR2x6WVhOMFpYSmtZaUlzSW1FaU9pSmpiVEI1Tm1rd2RHZ3dhbTlsTW5Gd2VXUnBhSFY2Y0hsc0luMC53MHFfeTM2WURxUFc0eXJyNjc1QmF3"
             ).decode("utf-8")
         except Exception:
             mapbox_token = ""
@@ -784,6 +784,53 @@ def build_3d_globe_html(
       satellite: 'mapbox://styles/mapbox/satellite-streets-v12'
     }};
 
+    const FALLBACK_STYLES = {{
+      satellite: {{
+        version: 8,
+        sources: {{
+          'esri-satellite': {{
+            type: 'raster',
+            tiles: [
+              'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}'
+            ],
+            tileSize: 256,
+            attribution: 'Esri World Imagery'
+          }}
+        }},
+        layers: [{{
+          id: 'esri-satellite-layer',
+          type: 'raster',
+          source: 'esri-satellite',
+          minzoom: 0,
+          maxzoom: 19
+        }}]
+      }},
+      dark: {{
+        version: 8,
+        sources: {{
+          'carto-dark': {{
+            type: 'raster',
+            tiles: [
+              'https://basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}@2x.png',
+              'https://a.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}@2x.png',
+              'https://b.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}@2x.png'
+            ],
+            tileSize: 256,
+            attribution: 'CartoDB Dark Matter'
+          }}
+        }},
+        layers: [{{
+          id: 'carto-dark-layer',
+          type: 'raster',
+          source: 'carto-dark',
+          minzoom: 0,
+          maxzoom: 19
+        }}]
+      }}
+    }};
+
+    let isFallbackBasemap = false;
+
     // Initialize Mapbox map with Globe projection
     const map = new mapboxgl.Map({{
       container: 'map',
@@ -796,6 +843,17 @@ def build_3d_globe_html(
 
     // Add navigation controls (zoom, compass)
     map.addControl(new mapboxgl.NavigationControl(), 'bottom-right');
+
+    // Auto-detect tile or auth errors and seamlessly fall back to open satellite tiles
+    map.on('error', (e) => {{
+      if (isFallbackBasemap) return;
+      const msg = ((e && e.error && (e.error.message || e.error.status)) || '') + '';
+      if (msg.includes('401') || msg.includes('403') || msg.includes('Forbidden') || msg.includes('Unauthorized') || msg.includes('Failed to fetch') || msg.includes('status of 4')) {{
+        console.warn('Mapbox satellite tile notice — seamlessly switching to high-res open geospatial tiles:', msg);
+        isFallbackBasemap = true;
+        map.setStyle(FALLBACK_STYLES[currentBasemap] || FALLBACK_STYLES.satellite);
+      }}
+    }});
 
     function applyAtmosphere() {{
       map.setFog({{
@@ -1581,7 +1639,11 @@ def build_3d_globe_html(
       currentBasemap = mode;
       document.getElementById('btnStyleDark').classList.toggle('active', mode === 'dark');
       document.getElementById('btnStyleSat').classList.toggle('active', mode === 'satellite');
-      map.setStyle(STYLES[mode]);
+      if (isFallbackBasemap) {{
+        map.setStyle(FALLBACK_STYLES[mode] || FALLBACK_STYLES.satellite);
+      }} else {{
+        map.setStyle(STYLES[mode]);
+      }}
     }}
 
     // Projection Switcher (Globe vs Mercator)
